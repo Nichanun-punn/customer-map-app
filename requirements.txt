@@ -1,0 +1,9 @@
+streamlit
+pandas
+folium
+streamlit-folium
+requests
+polyline
+geopy
+scikit-learn
+openpyxl
