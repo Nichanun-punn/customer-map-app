@@ -11,9 +11,8 @@ import base64
 import time
 
 # -------------------------------------------------------------------โหลดโลโก้ SCGP
-with open("static/logo.png", "rb") as f:
+with open("logo.png", "rb") as f:
     base64_logo = base64.b64encode(f.read()).decode()
-
 
 # Header แบบโลโก้อย่างเดียว
 st.markdown(f"""
