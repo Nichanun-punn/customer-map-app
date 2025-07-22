@@ -7,10 +7,15 @@ from geopy.distance import geodesic
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
 import time
+import base64
+import requests
 
 # ------------------------ Header แบบโลโก้จาก URL GitHub
-st.image("https://raw.githubusercontent.com/Nichanun-punn/customer-map-app/main/logo.png", width=120)
+url = "https://raw.githubusercontent.com/Nichanun-punn/customer-map-app/main/logo.png"
+response = requests.get(url)
+base64_logo = base64.b64encode(response.content).decode()
 
+# สร้าง Fixed Header ด้วย Base64 Image
 st.markdown(f"""
     <style>
     .fixed-header {{
@@ -32,13 +37,13 @@ st.markdown(f"""
         height: 50px;
     }}
     .spacer {{
-        height: 1px;
+        height: 80px;
     }}
     </style>
 
     <div class="fixed-header">
         <div class="fixed-header-content">
-             <img src="https://raw.githubusercontent.com/Nichanun-punn/customer-map-app/main/logo.png" height="50">
+            <img src="data:image/png;base64,{base64_logo}">
         </div>
     </div>
     <div class="spacer"></div>
