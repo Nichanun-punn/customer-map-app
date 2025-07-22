@@ -9,12 +9,11 @@ from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
 import base64
 import time
-import os
 
-# โหลดโลโก้ SCGP
-logo_path = os.path.join(os.path.dirname(__file__), "logo.png")
-with open(logo_path, "rb") as f:
+# -------------------------------------------------------------------โหลดโลโก้ SCGP
+with open("static/logo.png", "rb") as f:
     base64_logo = base64.b64encode(f.read()).decode()
+
 
 # Header แบบโลโก้อย่างเดียว
 st.markdown(f"""
