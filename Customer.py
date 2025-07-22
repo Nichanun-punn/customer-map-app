@@ -10,11 +10,7 @@ from sklearn.metrics import silhouette_score
 import base64
 import time
 
-# -------------------------------------------------------------------โหลดโลโก้ SCGP
-with open("logo.png", "rb") as f:
-    base64_logo = base64.b64encode(f.read()).decode()
-
-# Header แบบโลโก้อย่างเดียว
+# ------------------------ Header แบบโลโก้จาก URL GitHub
 st.markdown(f"""
     <style>
     .fixed-header {{
@@ -42,7 +38,7 @@ st.markdown(f"""
 
     <div class="fixed-header">
         <div class="fixed-header-content">
-            <img src="data:image/png;base64,{base64_logo}">
+            <img src="https://raw.githubusercontent.com/Nichanun-punn/customer-map-app/main/logo.png">
         </div>
     </div>
     <div class="spacer"></div>
