@@ -8,6 +8,7 @@ from geopy.distance import geodesic
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
 import base64
+import time
 
 # โหลดโลโก้ SCGP
 with open("logo.png", "rb") as f:
@@ -49,23 +50,53 @@ st.markdown(f"""
 
 # ---------------- CONFIG ---------------- #
 st.set_page_config(page_title="Customer Map Planner", layout="wide")
+st.sidebar.markdown("""
+    <div style='
+        text-align: center;
+        font-size: 20px;
+        font-weight: bold;
+        background-color: #DDE5F0;
+        padding: 10px;
+        border-radius: 8px;
+        margin-bottom: 15px;
+    '>
+        MENU
+    </div>
+""", unsafe_allow_html=True)
 
-# 🔁 Navigation Menu
 page = st.sidebar.radio("เลือกหน้า", ["📍 แผนที่ลูกค้า", "📊 ข้อมูลลูกค้า"])
 
 factory_latlon = (13.543372, 100.663351)
-default_excel_path = "Class.xlsx"
 
-# ---------------- CACHE ---------------- #
+#------------------------------------DATA-----------------------------------------------#
+DATA_PATH = "Class.csv" 
+
+df = pd.read_csv(DATA_PATH)
+
+
+# ------------------------------------------------------------------------------- CACHE -------------------------------------------- #
 @st.cache_data
-def get_osrm_route(start, end):
-    url = f"http://router.project-osrm.org/route/v1/driving/{start[1]},{start[0]};{end[1]},{end[0]}?overview=full"
-    r = requests.get(url)
-    if r.status_code == 200:
-        data = r.json()
-        coords = polyline.decode(data['routes'][0]['geometry'])
-        distance_km = data['routes'][0]['distance'] / 1000
-        return coords, distance_km
+def get_osrm_route(start, end, retries=3, timeout=10):
+    base_url = "https://router.project-osrm.org"
+    url = f"{base_url}/route/v1/driving/{start[1]},{start[0]};{end[1]},{end[0]}?overview=full"
+
+    for attempt in range(retries):
+        try:
+            response = requests.get(url, timeout=timeout)
+            if response.status_code == 200:
+                data = response.json()
+                coords = polyline.decode(data['routes'][0]['geometry'])
+                distance_km = data['routes'][0]['distance'] / 1000
+                return coords, distance_km
+            else:
+                st.warning(f"OSRM API ตอบกลับด้วยสถานะ {response.status_code}")
+                return [], 0
+        except requests.exceptions.Timeout:
+            st.warning(f"❗ Timeout ({attempt+1}/{retries}) กำลังลองใหม่...")
+        except requests.exceptions.RequestException as e:
+            st.error(f"❌ เกิดข้อผิดพลาดในการเชื่อมต่อ OSRM: {e}")
+            return [], 0
+    st.error("❌ เชื่อมต่อ OSRM API ไม่สำเร็จหลังจากพยายามหลายครั้ง")
     return [], 0
 
 @st.cache_data
@@ -85,30 +116,9 @@ def compute_clusters(df):
     df['Cluster'] = best_model.predict(features)
     return df
 
-# ---------------- LOAD FILE ---------------- #
-df = None
-uploaded_file = st.sidebar.file_uploader("📂 Upload Excel File (optional)", type=['xlsx'])
-
-if uploaded_file is not None:
-    df = pd.read_excel(uploaded_file)
-    st.sidebar.success("✅ Loaded file from upload")
-else:
-    try:
-        df = pd.read_excel(default_excel_path)
-        st.sidebar.info(f"📥 Loaded default file: {default_excel_path}")
-    except FileNotFoundError:
-        st.sidebar.error(f"❌ ไม่พบไฟล์: {default_excel_path}")
-        st.stop()
-
-# ---------------- VALIDATE ---------------- #
-required_cols = {'Name', 'Lat', 'Long', 'Class'}
-if not required_cols.issubset(df.columns):
-    st.error("❌ File must contain 'Name', 'Lat', 'Long', 'Class' columns.")
-    st.stop()
-
 df = compute_clusters(df)
 
-# ---------------- หน้าแผนที่ ---------------- #
+# --------------------------------------------------------------------------------MAP---------------------------------------- #
 if page == "📍 แผนที่ลูกค้า":
     st.title("📍 Customer Mapping & Route Planning")
 
@@ -194,6 +204,17 @@ if page == "📍 แผนที่ลูกค้า":
                         dash_array='5,5' if final_route[i + 1] == factory_latlon else None
                     ).add_to(m)
                     bounds.append(final_route[i + 1])
+
+                                       # ตัด factory ออกจากท้ายเส้นทางเฉพาะสำหรับแผนที่
+                final_route_on_map = final_route[:-1]
+
+                # ✅ เพิ่มลิงก์ Google Maps ตามลำดับเส้นทางที่คำนวณไว้
+                waypoints = "/".join([f"{lat},{lon}" for lat, lon in final_route_on_map])
+                maps_url = f"https://www.google.com/maps/dir/{waypoints}"
+
+                # ✅ แสดงลิงก์ในกล่องใหม่
+                st.markdown(f"[📍 คลิกเปิดเส้นทาง Google Maps พร้อมจุดแวะ]({maps_url})", unsafe_allow_html=True)
+
             else:
                 coords1, d1 = get_osrm_route(factory_latlon, dest_latlon)
                 coords2, d2 = get_osrm_route(dest_latlon, factory_latlon)
@@ -230,9 +251,9 @@ if page == "📍 แผนที่ลูกค้า":
         if not nearest_df.empty:
             st.subheader("👥 ลูกค้าที่อยู่ใกล้เคียง")
             st.markdown("""เส้นทาง: <br>
-            <span style='color: orange;'>🟧 โรงงาน ➝ ลูกค้ารายแรก</span><br>
-            <span style='color: green;'>🟩 ลูกค้าหลัก ➝ ลูกค้ารายที่สอง</span><br>
-            <span style='color: blue;'>🔵 กลับโรงงาน</span>
+            <span style='color: orange;'> ─── โรงงาน ➝ ลูกค้าหลัก</span><br>
+            <span style='color: green;'> ─── ลูกค้าหลัก ➝ ลูกค้าพ่วง</span><br>
+            <span style='color: blue;'> ⋯⋯⋯ กลับโรงงาน</span>
             """, unsafe_allow_html=True)
             nearest_df_display = nearest_df[['Name', 'Class']].reset_index(drop=True)
             nearest_df_display.index += 1
@@ -255,15 +276,89 @@ if page == "📍 แผนที่ลูกค้า":
                 st.info(f" **เส้นทางที่สั้นที่สุด**: {route_order}")
             st.success(f"🚚 ระยะทางรวมทั้งหมด: **{total_distance_km:.2f} km**")
 
-# ---------------- หน้าแสดงข้อมูลลูกค้า ---------------- #
+# -------------------------------------------------------------------------------------------------------- หน้าแสดงข้อมูลลูกค้า ---------------- #
 elif page == "📊 ข้อมูลลูกค้า":
     st.title("📊 ข้อมูลลูกค้า")
-    st.dataframe(df, use_container_width=True)
 
-    # ปุ่มดาวน์โหลด
-    st.download_button(
-        "⬇️ ดาวน์โหลดข้อมูลลูกค้า",
-        data=df.to_csv(index=False).encode('utf-8-sig'),
-        file_name="customer_data.csv",
-        mime="text/csv"
+    df = pd.read_csv(DATA_PATH)
+
+    # ------------------------------------------------------------------------------------------ ฟิลเตอร์ ----------------------------------------------
+    sub_industry_options = ["ทั้งหมด"] + sorted(df["Sub industry"].unique())
+    class_options = ["ทั้งหมด"] + sorted(df["Class"].unique())
+    cus_options = ["ทั้งหมด"] + sorted(df["Name"].unique())
+    col1, col2 = st.columns(2)
+    with col1:
+        selected_sub = st.selectbox("เลือก Sub industry", sub_industry_options)
+    with col2:
+        selected_class = st.selectbox("เลือก Class", class_options)
+
+    selected_cus = st.selectbox("เลือก Customer", cus_options)
+
+    # ------------------------------------------------------ กรองข้อมูลตามฟิลเตอร์ ---------------------------------
+    df_filtered = df.copy()
+    if selected_sub != "ทั้งหมด":
+        df_filtered = df_filtered[df_filtered["Sub industry"] == selected_sub]
+    if selected_class != "ทั้งหมด":
+        df_filtered = df_filtered[df_filtered["Class"] == selected_class]
+    if selected_cus != "ทั้งหมด":
+        df_filtered = df_filtered[df_filtered["Name"] == selected_cus]
+
+    # ----------------------------------------------------------------- เรียง Class
+    from pandas.api.types import CategoricalDtype
+    class_order = ["KAM", "Diamond", "Titanium", "Platinum", "Gold", "Silver", "Bronze", "Zinc", "SUB-CONTRACTOR"]
+    cat_type = CategoricalDtype(categories=class_order, ordered=True)
+    df_filtered["Class"] = df_filtered["Class"].astype(cat_type)
+    df_filtered = df_filtered.sort_values(by=["Class", "Name"])  # เรียง Name ก็ได้แทน "ลำดับ"
+
+    #  ใส่ลำดับใหม่เริ่มจาก 1
+    df_filtered = df_filtered.reset_index(drop=True)
+    if "ลำดับ" not in df_filtered.columns:
+        df_filtered.insert(0, "ลำดับ", range(1, len(df_filtered)+1))
+    df_filtered = df_filtered.reset_index(drop=True)  # ล้าง index เดิม
+    df_filtered["ลำดับ"] = df_filtered.index + 1      # ใส่เลขลำดับใหม่ เริ่มจาก 1
+
+    # เพิ่มลิงก์ Google Maps
+    df_filtered["Google Maps"] = df_filtered.apply(
+        lambda row: f'<a href="https://www.google.com/maps?q={row["Lat"]},{row["Long"]}"     target="_blank">🌐</a>',
+        axis=1
     )
+
+    # จัดกลางหัวตารางและข้อมูลทุกช่อง
+    st.markdown("""
+        <style>
+        table {
+            width: 100%;
+            text-align: center !important;
+        }
+        th, td {
+            text-align: center !important;
+            vertical-align: middle !important;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
+    # แสดงผลแบบ HTML ให้คลิกลิงก์ได้
+    st.markdown(
+        df_filtered[["ลำดับ", "Sub industry", "Customer ID", "Name", "Class", "Lat", "Long",     "Google Maps"]]
+        .to_html(escape=False, index=False),
+        unsafe_allow_html=True
+    )
+
+    st.markdown("## ✏️ แก้ไขข้อมูลลูกค้า")
+
+    # ให้แก้ไขข้อมูลได้
+    edited_df = st.data_editor(
+        df_filtered,
+        use_container_width=True,
+        num_rows="dynamic",
+        key="editable_table"
+    )
+
+# ปุ่มบันทึกกลับไปยังไฟล์ CSV หรือฐานข้อมูล
+    if st.button("💾 บันทึกการเปลี่ยนแปลง"):
+        # ✅ บันทึกเป็น CSV หรือเขียนกลับไปยังฐานข้อมูลได้ที่นี่
+        edited_df.to_csv(DATA_PATH, index=False)
+        st.success("✅ บันทึกข้อมูลเรียบร้อยแล้ว!")
+        st.cache_data.clear()  # ล้าง cache ของข้อมูลทั้งหมด
+
+   
