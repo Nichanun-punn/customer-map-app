@@ -11,6 +11,9 @@ import base64
 import time
 
 # ------------------------ Header แบบโลโก้จาก URL GitHub
+url = "https://raw.githubusercontent.com/Nichanun-punn/customer-map-app/main/logo.png"
+response = requests.get(url)
+base64_logo = base64.b64encode(response.content).decode()
 st.markdown(f"""
     <style>
     .fixed-header {{
@@ -38,7 +41,7 @@ st.markdown(f"""
 
     <div class="fixed-header">
         <div class="fixed-header-content">
-            <img src="https://raw.githubusercontent.com/Nichanun-punn/customer-map-app/main/logo.png">
+             <img src="data:image/png;base64,{base64_logo}" height="50">
         </div>
     </div>
     <div class="spacer"></div>
